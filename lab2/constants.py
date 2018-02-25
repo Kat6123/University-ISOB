@@ -1,4 +1,18 @@
-# Permutation and translation tables for DES
+# -*- coding: utf-8 -*-
+
+TYPE = {
+    "encrypt": 1,
+    "decrypt": 0
+}
+
+CHUNK_BIT_SIZE = 64
+CHUNK_HALF_BIT_SIZE = int(CHUNK_BIT_SIZE / 2)
+CHUNK_S_BOX = 6
+ITERS = 16
+STRING_SIZE = 16
+
+
+# Permutation and translation constants for DES
 __pc1 = [
     56, 48, 40, 32, 24, 16,  8,
     0, 57, 49, 41, 33, 25, 17,

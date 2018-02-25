@@ -1,32 +1,22 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-
 from bitarray import bitarray
-from tables import (
-    __ip, __pc1, __pc2, __sbox, __left_rotations, __expansion_table, __p, __fp)
+from common import (
+    map_bits, left_shift, bitarray_to_int,
+    int_to_bitarray, bytes_to_bitarray
+)
+from constants import (
+    __ip, __pc1, __pc2, __sbox,
+    __left_rotations, __expansion_table, __p, __fp,
+    TYPE, CHUNK_BIT_SIZE, CHUNK_HALF_BIT_SIZE,
+    CHUNK_S_BOX, STRING_SIZE, ITERS
+)
 
 
-TYPE = {
-    "encrypt": 1,
-    "decrypt": 0
-}
-
-CHUNK_BIT_SIZE = 64
-CHUNK_HALF_BIT_SIZE = 32
-CHUNK_S_BOX = 6
-CODING = "utf-8"
-ITERS = 16
-STRING_SIZE = 16
-
-
-def _chunks(message, size):
+def split_chunks(message, size):
     for i in range(0, len(message), size):
         yield message[i: i + size]
-
-
-def map_bits(bitarr, bitmap):
-    return bitarray(bitarr[_] for _ in bitmap)
 
 
 def ip_permutation(chunk):
@@ -35,14 +25,6 @@ def ip_permutation(chunk):
 
 def clean_key(key):
     return map_bits(key, __pc1)
-
-
-def left_shift(bitarr, start, end, shift):
-    bitarr[start:end] = bitarr[start+shift:end] + bitarr[start:start+shift]
-
-
-def right_shift(bitarr, start, end, shift):
-    bitarr[start:end] = bitarr[end-shift:end] + bitarr[start:end-shift]
 
 
 def shift_key(bitarr, iter):
@@ -56,23 +38,11 @@ def iter_key(key):
     _key = clean_key(key)
     for i in range(ITERS):
         shift_key(_key, i)
-
-        yield map_bits(key, __pc2)
+        yield map_bits(_key, __pc2)
 
 
 def extension_E(chunk):
     return map_bits(chunk, __expansion_table)
-
-
-def bitarray_to_int(bitarr):
-    return int(bitarr.to01(), 2)
-
-
-def int_to_bitarray(integer, bitarray_size=4):
-    bitarr = bitarray("0"*bitarray_size)
-    bin_int = bin(integer)[2:]
-    bitarr[bitarray_size-len(bin_int):] = bitarray(bin_int)
-    return bitarr
 
 
 def func(right_chunk, key):
@@ -81,7 +51,7 @@ def func(right_chunk, key):
 
     i = 0
     res = bitarray()
-    for chunk in _chunks(ext, CHUNK_S_BOX):
+    for chunk in split_chunks(ext, CHUNK_S_BOX):
         string = bitarray_to_int(chunk[0::CHUNK_S_BOX - 1])
         column = bitarray_to_int(chunk[1:CHUNK_S_BOX-1])
 
@@ -93,9 +63,13 @@ def func(right_chunk, key):
     return map_bits(res, __p)
 
 
-def crypt_chunk(chunk, key):
+def crypt_chunk(chunk, key, crypt_type):
+    key_range = list(iter_key(key))
+    if crypt_type == TYPE["decrypt"]:
+        key_range = reversed(key_range)
+
     chunk = ip_permutation(chunk)
-    for key in iter_key(key):
+    for key in key_range:
         right_old = chunk[CHUNK_HALF_BIT_SIZE:]
         left_old = chunk[:CHUNK_HALF_BIT_SIZE]
         right_new = func(right_old, key) ^ left_old
@@ -104,60 +78,35 @@ def crypt_chunk(chunk, key):
         chunk[CHUNK_HALF_BIT_SIZE:] = right_new
         chunk[:CHUNK_HALF_BIT_SIZE] = left_new
 
-    chunk = map_bits(chunk, __fp)
-
-    return chunk
-
-
-def decrypt_chunk(chunk, key):
-    chunk = ip_permutation(chunk)
-    for key in iter_key(key):
-        right_old = chunk[CHUNK_HALF_BIT_SIZE:]
-        left_old = chunk[:CHUNK_HALF_BIT_SIZE]
-        right_new = left_old
-        left_new = func(left_old, key) ^ right_old
-
-        chunk[CHUNK_HALF_BIT_SIZE:] = right_new
-        chunk[:CHUNK_HALF_BIT_SIZE] = left_new
-
+    chunk[CHUNK_HALF_BIT_SIZE:] = left_new
+    chunk[:CHUNK_HALF_BIT_SIZE] = right_new
     chunk = map_bits(chunk, __fp)
 
     return chunk
 
 
 def crypt(message, key, crypt_type):
-    # TODO: generate key from type
     # TODO:  Check if chunk is less than 64 bit ->
-    # first number size of  extra bits
-    # if crypt_type == TYPE["encrypt"]:
-    # TODO: check utf-8
-    _message = bitarray()
-    _message.frombytes(message)
-    if crypt_type == TYPE["encrypt"]:
-        crypted_chunks = (
-            crypt_chunk(chunk, key).tobytes()
-            for chunk in _chunks(_message, CHUNK_BIT_SIZE))
-    else:
-        crypted_chunks = (
-            decrypt_chunk(chunk, key).tobytes()
-            for chunk in _chunks(_message, CHUNK_BIT_SIZE))
-    res = b''
-    for _ in crypted_chunks:
-        res = res + _
-    # XXX: join not work
-    # return b''.join(chunk for chunk in crypted_chunks)
-    return res
+    # first number size of  extra bits if crypt_type == TYPE["encrypt"]:
+    msg_bitarr = bytes_to_bitarray(message)
+    key_bitarr = bytes_to_bitarray(key)
+
+    crypted_chunks = (
+        crypt_chunk(chunk, key_bitarr, crypt_type)
+        for chunk in split_chunks(msg_bitarr, CHUNK_BIT_SIZE))
+
+    return b"".join(chunk.tobytes() for chunk in crypted_chunks)
 
 
 def main():
-    message = b"Hi! there jsdhfljghld lshflsdhfs dflsifhsifhdilf ghslifg"
-    key = bitarray()
-    key.frombytes(b"12345678")
+    message = b"1234567812345678"
+    key = b"12345678"
     encoded = crypt(message, key, TYPE["encrypt"])
-    decoded = crypt(message, key, TYPE["decrypt"])
-    print(b"Message: " + message)
-    print(b"Encoded: " + encoded)
-    print(b"Decoded: " + decoded.decode("utf-8"))
+    decoded = crypt(encoded, key, TYPE["decrypt"])
+
+    print("Message: " + str(message))
+    print("Encoded: " + str(encoded))
+    print("Decoded: " + str(decoded))
 
 
 if __name__ == '__main__':
