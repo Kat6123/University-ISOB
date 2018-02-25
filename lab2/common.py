@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+from constants import BIT_PER_CHAR
 from bitarray import bitarray
 
 
@@ -31,3 +32,8 @@ def right_shift(bitarr, start, end, shift):
 
 def map_bits(bitarr, bitmap):
     return bitarray(bitarr[_] for _ in bitmap)
+
+
+def space_complete(string):
+    redund_symbols = len(string) % BIT_PER_CHAR
+    return string + b" " * (BIT_PER_CHAR - redund_symbols)

@@ -4,7 +4,8 @@
 from bitarray import bitarray
 from common import (
     map_bits, left_shift, bitarray_to_int,
-    int_to_bitarray, bytes_to_bitarray
+    int_to_bitarray, bytes_to_bitarray,
+    space_complete
 )
 from constants import (
     __ip, __pc1, __pc2, __sbox,
@@ -86,9 +87,9 @@ def crypt_chunk(chunk, key, crypt_type):
 
 
 def crypt(message, key, crypt_type):
-    # TODO:  Check if chunk is less than 64 bit ->
-    # first number size of  extra bits if crypt_type == TYPE["encrypt"]:
-    msg_bitarr = bytes_to_bitarray(message)
+    _msg = (space_complete(message)
+            if crypt_type == TYPE["encrypt"] else message)
+    msg_bitarr = bytes_to_bitarray(_msg)
     key_bitarr = bytes_to_bitarray(key)
 
     crypted_chunks = (
@@ -99,7 +100,7 @@ def crypt(message, key, crypt_type):
 
 
 def main():
-    message = b"1234567812345678"
+    message = b"1234567812345678hj"
     key = b"12345678"
     encoded = crypt(message, key, TYPE["encrypt"])
     decoded = crypt(encoded, key, TYPE["decrypt"])

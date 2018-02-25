@@ -1,82 +1,134 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+
+import random
 import json
+import time
+from constants import TYPE, KEY_LENGTH, ID_LENGTH, TICKET_LIFETIME_SEC
+from des import crypt
+
+
+CODING = "latin-1"
+EPS = 1
+
+
+# TODO: 1) remove K_c_tgs 2) logging
+
+
+def random_key():
+    return ''.join(
+            random.choice('0123456789ABCDEF') for i in range(KEY_LENGTH))
+
+
+def random_id():
+    return ''.join(
+            random.choice('0123456789ABCDEF') for i in range(ID_LENGTH))
+
+
+def encode_json(js, key):
+    _js = json.dumps(js, ensure_ascii=False)
+    _key = key.encode(CODING)
+    return crypt(_js.encode(CODING), _key, TYPE["encrypt"])
+
+
+def decode_json(enc_js, key):
+    # _js = enc_js.encode(CODING)
+    _key = key.encode(CODING)
+    dec_js = crypt(enc_js, _key, TYPE["decrypt"])
+    return json.loads(dec_js.decode(CODING))
+
+
+class KerberosException(Exception):
+    def __init__(self, msg):
+        super(KerberosException, self).__init__(msg)
 
 
 class Kerberos:
-    GLOBAL_KEY = 1234   # K as_tgs
+    servers = {
+        "tgs": random_id(),
+        "as": random_id()
+    }
+    K_AS_TGS = random_key()   # K as_tgs
 
 
 class Authenticater(Kerberos):      # AS
-    ANSWER = {
-        "ticket": {
-            "c": None,
-            "tgs": 567,
-            "t1": None,
-            "p1": None,
-            "authorizator_key": None    # K c_TGS
-        },
-        "authorizator_key": None
-    }
+    def register(self):
+        _id, _key = random_id(), random_key()
+        while _id in Kerberos.servers.keys():
+            _id = random_id()
 
-    def __init__(self):
-        self.servers = {}
-        self.authorizator_key = 567
+        server_info = {
+            "key": _key,
+            "authorizator_key": None
+        }
+        Kerberos.servers[_id] = server_info
+        return _id, _key
 
-    def register(self, key):
-        id = 123
-        self.servers[id] = key
+    def identify_client(self, client_id):
+        if client_id not in Kerberos.servers.keys():
+            raise KerberosException("Unidentified client")
 
-    def generate_ticket(self, id):
-        self._fill_answer(id)
-        return 
+        client_key = Kerberos.servers[client_id]["key"]
+        authorizator_key = random_key()                # Generate K_c_tgs
+        Kerberos.servers[client_id]["authorizator_key"] = authorizator_key
 
-    def _fill_answer(self, _id):
-        Authenticater.ANSWER["ticket"]["c"] = _id
-        # TODO: generate real timestamp
-        Authenticater.ANSWER["ticket"]["t1"] = 874
-        Authenticater.ANSWER["ticket"]["p1"] = 874
-        Authenticater.ANSWER["ticket"]["authorizator_key"] = self.authorizator_key
-        Authenticater.ANSWER["authorizator_key"] = self.authorizator_key
+        response = {
+            "TGT": self._generate_ticket(client_id),
+            "K_c_tgs": authorizator_key
+        }
+
+        return encode_json(response, client_key)
+
+    def _generate_ticket(self, client_id):
+        ticket = {
+            "c": client_id,
+            "tgs": Kerberos.servers["tgs"],
+            "t1": time.time(),
+            "p1": TICKET_LIFETIME_SEC,
+            "K_c_tgs": Kerberos.servers[client_id]["authorizator_key"]
+        }
+        return encode_json(ticket, Kerberos.K_AS_TGS).decode(CODING)
 
 
 class Authorizator(Kerberos):       # TGS
-    pass
+    def set_connection(self, request):
+        ticket = decode_json(request["ticket"], Kerberos.K_AS_TGS)
+        auth_block = decode_json(
+            request["auth"], ticket["K_c_tgs"])
+
+        if round(auth_block["t1"]) - round(ticket["t1"]) > EPS:
+            raise KerberosException("Unmatched timestamps")
+
+        if ticket["t1"] + ticket["p1"] < time.time():
+            raise KerberosException("Ticket life has ended")
+
+        K_c_ss = random_key()
+        response = {
+            "TGS": self._generate_ticket(ticket["c"], request["id"], K_c_ss),
+            "K_c_ss": K_c_ss
+        }
+        return encode_json(response, ticket["K_c_tgs"])
+
+    def _generate_ticket(self, client_id, server_id, server_key):
+        ticket = {
+            "c": client_id,
+            "ss": server_id,
+            "t3": time.time(),
+            "p2": TICKET_LIFETIME_SEC,
+            "K_c_ss": server_key
+        }
+        return encode_json(
+            ticket,
+            Kerberos.servers[server_id]["authorizator_key"]).decode(CODING)
 
 
 authenticater = Authenticater()
 authorizator = Authorizator()
 
 
-class Client:
-    def __init__(self, auth, author):
-        # TODO: Random genrate key and id
-        self.key = 1234     # K c
-        self.id = authenticater.register(self.key)       # c
-
-        self.ticket = None
-        self.authorizator_key = None
-
-    def authenticate(self):
-        encoded = authenticater.generate_ticket(self.id)
-        self.ticket, self.authorizator_key = self._decode_authent(encoded)
-
-    def _decode_authent(self, encoded):
-        # TODO: uncomment when des will ready
-        # decoded = des.decode(encoded, self.key)
-        # json_obj = json.loads(decoded)
-        json_obj = json.loads(encoded)
-        return json_obj['ticket'], json_obj['authorizator_key']
-
-
-class Server:
-    pass
-
-
-def main():
-    pass
-
-
 if __name__ == '__main__':
-    main()
+    _id, _key = authenticater.register()
+    print(_id, _key)
+    msg = authenticater.identify_client(_id)
+    print(msg)

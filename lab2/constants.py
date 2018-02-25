@@ -1,16 +1,22 @@
 # -*- coding: utf-8 -*-
 
-TYPE = {
-    "encrypt": 1,
-    "decrypt": 0
-}
 
+KEY_LENGTH = 8
+ID_LENGTH = KEY_LENGTH
+TICKET_LIFETIME_SEC = 180
+
+BIT_PER_CHAR = 8
 CHUNK_BIT_SIZE = 64
 CHUNK_HALF_BIT_SIZE = int(CHUNK_BIT_SIZE / 2)
 CHUNK_S_BOX = 6
 ITERS = 16
 STRING_SIZE = 16
 
+
+TYPE = {
+    "encrypt": 1,
+    "decrypt": 0
+}
 
 # Permutation and translation constants for DES
 __pc1 = [
