@@ -5,13 +5,14 @@
 import random
 import json
 import time
-from constants import TYPE, KEY_LENGTH, ID_LENGTH, TICKET_LIFETIME_SEC
+import logging
+from constants import (
+    TYPE, KEY_LENGTH, ID_LENGTH,
+    TICKET_LIFETIME_SEC, EPS, CODING)
 from des import crypt
 
 
-CODING = "latin-1"
-EPS = 1
-
+logger = logging.getLogger(__name__)
 
 # TODO: 1) remove K_c_tgs 2) logging
 
@@ -33,7 +34,6 @@ def encode_json(js, key):
 
 
 def decode_json(enc_js, key):
-    # _js = enc_js.encode(CODING)
     _key = key.encode(CODING)
     dec_js = crypt(enc_js, _key, TYPE["decrypt"])
     return json.loads(dec_js.decode(CODING))
@@ -77,7 +77,6 @@ class Authenticater(Kerberos):      # AS
             "TGT": self._generate_ticket(client_id),
             "K_c_tgs": authorizator_key
         }
-
         return encode_json(response, client_key)
 
     def _generate_ticket(self, client_id):
@@ -88,6 +87,8 @@ class Authenticater(Kerberos):      # AS
             "p1": TICKET_LIFETIME_SEC,
             "K_c_tgs": Kerberos.servers[client_id]["authorizator_key"]
         }
+        logging.info("      Ticket from AS: {}".format(
+                        json.dumps(ticket)))
         return encode_json(ticket, Kerberos.K_AS_TGS).decode(CODING)
 
 
@@ -97,9 +98,16 @@ class Authorizator(Kerberos):       # TGS
         auth_block = decode_json(
             request["auth"], ticket["K_c_tgs"])
 
+        logging.info("      TGS received ticket: {}".format(
+            json.dumps(ticket)))
+        logging.info("      TGS auth block: {}".format(
+            json.dumps(auth_block)))
+
+        logging.info("      Check timestamp")
         if round(auth_block["t1"]) - round(ticket["t1"]) > EPS:
             raise KerberosException("Unmatched timestamps")
 
+        logging.info("      Check life period")
         if ticket["t1"] + ticket["p1"] < time.time():
             raise KerberosException("Ticket life has ended")
 
@@ -118,6 +126,8 @@ class Authorizator(Kerberos):       # TGS
             "p2": TICKET_LIFETIME_SEC,
             "K_c_ss": server_key
         }
+        logging.info("      Ticket from TGS: {}".format(
+                        json.dumps(ticket)))
         return encode_json(
             ticket,
             Kerberos.servers[server_id]["authorizator_key"]).decode(CODING)
@@ -125,10 +135,3 @@ class Authorizator(Kerberos):       # TGS
 
 authenticater = Authenticater()
 authorizator = Authorizator()
-
-
-if __name__ == '__main__':
-    _id, _key = authenticater.register()
-    print(_id, _key)
-    msg = authenticater.identify_client(_id)
-    print(msg)

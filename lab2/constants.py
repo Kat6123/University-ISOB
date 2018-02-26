@@ -12,6 +12,9 @@ CHUNK_S_BOX = 6
 ITERS = 16
 STRING_SIZE = 16
 
+CODING = "latin-1"
+EPS = 1
+PRINT_SYMBOLS = 8
 
 TYPE = {
     "encrypt": 1,
